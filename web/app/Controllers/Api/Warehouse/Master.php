@@ -566,8 +566,62 @@ if($postData->id!=""){
   public function getWHLotBasedSL()
   {
     $master = new MasterModel();
+    // Axios often sends JSON body while headers may not match what getJSON() expects.
+    // Merge: JSON object + POST form fields + GET so params are never dropped.
     $postData = $this->request->getJSON();
-    return  $this->sendSuccessResult($master->getWHLotBasedSL($postData->LocationId));
+    if ($postData === null) {
+      $raw = $this->request->getBody();
+      if ($raw !== null && $raw !== '') {
+        $decoded = json_decode($raw, false);
+        if (is_object($decoded)) {
+          $postData = $decoded;
+        }
+      }
+    }
+    if ($postData === null) {
+      $postData = new \stdClass();
+    }
+    foreach ($this->request->getPost() as $k => $v) {
+      if (!isset($postData->{$k}) || $postData->{$k} === null || $postData->{$k} === '') {
+        $postData->{$k} = $v;
+      }
+    }
+
+    $pick = function ($keys) use ($postData) {
+      foreach ($keys as $k) {
+        if (isset($postData->{$k}) && $postData->{$k} !== null && $postData->{$k} !== '') {
+          return $postData->{$k};
+        }
+      }
+      return null;
+    };
+
+    // This endpoint is primarily called using POST JSON: { "LocationId": "DV00" }.
+    // However, when testing via browser (GET), JSON body will be empty.
+    // So we also support LocationId from query string or regular POST data.
+    $locationId = $pick(['LocationId', 'LOCATIONID', 'locationId'])
+      ?? $this->request->getGet('LocationId')
+      ?? $this->request->getPost('LocationId');
+
+    // Optional params for SAP-based lot listing (camelCase, snake_case, SAP-style caps).
+    $whCode = $pick(['wh_code', 'whCode', 'WH_CODE'])
+      ?? $this->request->getGet('wh_code')
+      ?? $this->request->getPost('wh_code');
+    $plant = $pick(['plant', 'PLANT', 'plantId', 'plantid'])
+      ?? $this->request->getGet('plant')
+      ?? $this->request->getPost('plant');
+    $stroLoc = $pick(['stro_loc', 'stroLoc', 'STO_LOC', 'STRO_LOC'])
+      ?? $this->request->getGet('stro_loc')
+      ?? $this->request->getPost('stro_loc')
+      ?? $this->request->getGet('stroLoc')
+      ?? $this->request->getPost('stroLoc');
+    $bin = $pick(['bin', 'BIN'])
+      ?? $this->request->getGet('bin')
+      ?? $this->request->getPost('bin');
+
+    return  $this->sendSuccessResult(
+      $master->getWHLotBasedSL($locationId, $whCode, $plant, $stroLoc, $bin)
+    );
   }
    /* Fetch Lots under Plant */
    public function getKeyLoanLotList()
@@ -1645,4 +1699,5 @@ public function getMaster_ngw_divisionById(){
         
       return  $this->sendSuccessResult($res);
     }
+    
   }

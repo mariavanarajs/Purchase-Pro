@@ -30,6 +30,20 @@ const RecieptEntryScreenDetails = ({ setShow, show, purchaseId,poNumbers,getLoad
     const [returnDeliveryData, setReturnDeliveryData] = useState([])
     const [materialInfo, setMaterialInfo] = useState([])
 
+    // Show BIN column (stored as lotNo in payload) when backend indicates lot status is enabled.
+    // `isLotStatus` may come in different sections depending on the API shape,
+    // so we check both `materialInfo` and `poData.results`.
+    const showLotColumn = Boolean(
+        (Array.isArray(materialInfo) &&
+            materialInfo.some((materialData) =>
+                Number(materialData?.isLotStatus) === 1 ||
+                materialData?.PO_ITEM?.some((lineItem) => Number(lineItem?.isLotStatus) === 1)
+            )) ||
+        (Array.isArray(poData)
+            ? poData.some((row) => Number(row?.isLotStatus) === 1)
+            : Number(poData?.isLotStatus) === 1)
+    );
+
     const firstWeight = weighmentImages.filter((item) => item.moduleStatusId == 2);
     const secondWeight = weighmentImages.filter((item) => item.moduleStatusId == 3);
 
@@ -701,11 +715,18 @@ const RecieptEntryScreenDetails = ({ setShow, show, purchaseId,poNumbers,getLoad
                 const LLRNO = llrno[`${poIndex}-${lineIndex}`] || '';
                 const WeighmentNo = weighmentNo[`${poIndex}-${lineIndex}`] || '';
                 const ManualRecord = manualRecord[`${poIndex}-${lineIndex}`] || '';
+                const LotNo = lotNo[`${poIndex}-${lineIndex}`] || '';
                 const BatchCode = batchCode[`${poIndex}-${lineIndex}`] || '';
                 const ExpireDate = expiresDate[`${poIndex}-${lineIndex}`] || '';
     
                 const taxPercentage = getTaxPercentage(materialDetails);
-    
+                
+                if (ReceivedQty > 0 && LotNo === '' && showLotColumn) {
+                    errorToast(`Error: Lot Number is required for Material - ${materialDetails?.MATERIAL_NAME}`);
+                    hasInvalidEntries = true;
+                    return null;
+                }
+
                 // Material Calculations
                 const materialRate = calculateSimple(materialDetails?.RATE, ReceivedQty);
                 const materialTax = ((materialDetails?.RATE * ReceivedQty) * (taxPercentage / 100)).toFixed(3);
@@ -801,6 +822,7 @@ const RecieptEntryScreenDetails = ({ setShow, show, purchaseId,poNumbers,getLoad
                     invoiceMaterialAmount, invoiceFreightAmount, invoicePackingAmount,
                     invoiceLoadingAmount, invoiceUnloadingAmount, invoiceOtherAmount, invoiceIneligibleAmount,
                     taxPercentage, 
+                    lotNo: LotNo,
                     batchCode: BatchCode, 
                     expiryDate: ExpireDate,
                     freightCost: materialDetails?.FREIGHT_RATE || 0,
@@ -837,6 +859,11 @@ const RecieptEntryScreenDetails = ({ setShow, show, purchaseId,poNumbers,getLoad
             return;
         }
         
+        // derive a top-level LOT_NO: prefer PO header value, otherwise use first material LOT
+        const firstMaterialLOT = (submittedData || [])
+            .flatMap(s => (s.materials || []).map(m => m.LOT_NO))
+            .find(Boolean) || '';
+
         let postData = {
             MaterialDetails: submittedData.length > 0 ? submittedData : [],
             vaNumber:poData[0]?.vaNumber,
@@ -847,6 +874,8 @@ const RecieptEntryScreenDetails = ({ setShow, show, purchaseId,poNumbers,getLoad
             msme:materialInfo[0]?.MSME,
             invoiceCopy: poData[0]?.invoiceCopy ?? poData[0]?.invoiceCopys ?? '',
             gateInDateStamp: poData[0]?.gateInDateStamp,
+            receipt_material_info: true,
+           // lotNo: poData[0]?.LOT_NO || poData[0]?.lotNo || firstMaterialLOT || '',
         };
         
 
@@ -951,6 +980,7 @@ const RecieptEntryScreenDetails = ({ setShow, show, purchaseId,poNumbers,getLoad
       const [llrno, setLlrno] = useState({});
       const [weighmentNo, setWeighmentNo] = useState({});
       const [manualRecord, setManualRecord] = useState({});
+      const [lotNo, setLotNo] = useState({});
       const [batchCode, setBatchCode] = useState({});
       const [expiresDate, setExpiresDate] = useState({});
       const handleDateChange = (i, j, value) => {
@@ -970,6 +1000,9 @@ const RecieptEntryScreenDetails = ({ setShow, show, purchaseId,poNumbers,getLoad
       };
       const handleManualRecord = (i, j, value) => {
         setManualRecord((prev) => ({ ...prev, [`${i}-${j}`]: value }));
+      };
+      const handleLotNo = (i, j, value) => {
+        setLotNo((prev) => ({ ...prev, [`${i}-${j}`]: value }));
       };
       const handleBatchCode = (i, j, value) => {
         setBatchCode((prev) => ({ ...prev, [`${i}-${j}`]: value }));
@@ -1108,7 +1141,33 @@ const RecieptEntryScreenDetails = ({ setShow, show, purchaseId,poNumbers,getLoad
     //       cessValue:0
     //     }
     //   );
-    
+      
+    //   const totalCharges = totalFreight + totalLoading + totalUnloading + 
+    //                       totalPacking  + totalOtherCharges;
+      
+    //   const data1 = [
+    //     { label: "Gross Material Amount", value: totalMaterialAmount },
+    //     { label: "Less: Total Discount", value: -totalDiscount, isNegative: true },
+    //     { label: "Taxable Amount", value: (totalMaterialAmount - totalDiscount), isHighlight: true },
+        
+    //     // Charges Section
+    //     { label: "Freight Charges", value: totalFreight, isCharge: true },
+    //     { label: "Loading Charges", value: totalLoading, isCharge: true },
+    //     { label: "Unloading Charges", value: totalUnloading, isCharge: true },
+    //     { label: "Packing Charges", value: totalPacking, isCharge: true },
+    //     { label: "Other Charges", value: totalOtherCharges, isCharge: true },
+    //     // { label: "Total Charges", value: totalCharges, isSubTotal: true },
+        
+    //     // Taxes Section
+    //     { label: "Add: Total Tax", value: totalTaxAmount },
+    //     { label: "RCM Reversal", value: taxPercentageRCM === 0 ? 0 : (-totalTaxAmount) },
+    //     { label: "Add: Ineligible Tax", value: totalIneligibleTax },
+    //     // { label: "Add: Ineligible Tax", value: totalIneligibleTax },
+    //     { label: "CESS Value", value: cessValue },
+    //     { label: "JITC Value", value: jitcValue },
+    //     // Final Total
+    //     { label: "Total Amount Payable", value: totalAmount, isTotal: true }
+    //     ];
     const {
         totalMaterialAmount,
         totalTaxAmount,
@@ -1236,7 +1295,6 @@ const RecieptEntryScreenDetails = ({ setShow, show, purchaseId,poNumbers,getLoad
 
         { label: "Total Amount Payable", value: totalAmount, isTotal: true },
         ];
-
         const [selectedPO, setSelectedPO] = useState(null);
         const [poModalOpen, setPoModalOpen] = useState(false);
         const [selectedType, setSelectedType] = useState(null);
@@ -1248,26 +1306,47 @@ const RecieptEntryScreenDetails = ({ setShow, show, purchaseId,poNumbers,getLoad
 
         const togglePOModal = () => setPoModalOpen(!poModalOpen);
     return (
-        <div>
-            <Modal show={show} centered size="xl">
-                <CardHeader>
+        <div className="receipt-entry-details-compact">
+            <style>{`
+                .receipt-entry-details-modal-wide { max-width: min(98vw, 1680px); margin: 0.5rem auto; }
+                .receipt-entry-details-compact .card-body { padding: 0.65rem 0.85rem; }
+                .receipt-entry-details-compact .receipt-section-title {
+                    font-size: 0.95rem;
+                    font-weight: 600;
+                    margin-bottom: 0.35rem;
+                }
+                .receipt-entry-details-compact .table-compact td,
+                .receipt-entry-details-compact .table-compact th {
+                    padding: 0.28rem 0.4rem;
+                    font-size: 0.78rem;
+                    vertical-align: middle;
+                }
+                .receipt-entry-details-compact .table-compact thead th {
+                    font-size: 0.72rem;
+                    line-height: 1.2;
+                }
+                .receipt-entry-details-compact label { font-size: 0.8rem; margin-bottom: 0.2rem; }
+                .receipt-entry-details-compact .form-control { font-size: 0.8rem; padding: 0.28rem 0.45rem; height: calc(1.4em + 0.5rem); }
+            `}</style>
+            <Modal show={show} centered size="xl" >
+                <CardHeader className="py-2">
                     <Row>
                         <Col sm="10" md="10">
                             <FormGroup className="d-flex justify-content-start mb-0">
-                                <h4>Receipt Entry Details</h4>
+                                <h5 className="mb-0" style={{ fontSize: "1.05rem" }}>Receipt entry details</h5>
                             </FormGroup>
                         </Col>
                         <Col sm="2" md="2">
                             <FormGroup className="d-flex justify-content-end mb-0">
-                                <X color="red" onClick={() => setShow(false)} size={20} />
+                                <X color="red" onClick={() => setShow(false)} size={18} />
                             </FormGroup>
                         </Col>
                     </Row>
                 </CardHeader>
-                <Card>
+                <Card className="mb-1">
                 <CardBody>
-                        <Col md="12" sm="12">
-                            <h4 className="text-primary"><u>PO Details</u></h4><br />
+                        <Col md="12" sm="12" className="px-0">
+                            <div className="text-primary receipt-section-title"><u>PO details</u></div>
                         </Col>
                         <Row>
                         <Col md="3" sm="3">
@@ -1396,8 +1475,8 @@ const RecieptEntryScreenDetails = ({ setShow, show, purchaseId,poNumbers,getLoad
                         </Row>
                         <label></label>
                         <div style={{ width: '100%', overflowX: 'auto' }}>
-                            <table className="table table-bordered" 
-                                    style={{ width: '100%', minWidth: '2000px', textAlign: 'left', tableLayout: 'fixed' }}> {/* Added table-layout: fixed */}
+                            <table className="table table-bordered table-sm table-compact" 
+                                    style={{ width: '100%', minWidth: '1600px', textAlign: 'left', tableLayout: 'fixed' }}> {/* Added table-layout: fixed */}
                                 <thead>
                                 <tr>
                                     <th className="bg-primary text-white" style={{ width: '15%' }}>Vehicle NO</th>
@@ -1453,19 +1532,19 @@ const RecieptEntryScreenDetails = ({ setShow, show, purchaseId,poNumbers,getLoad
                         </div>
                     </CardBody>
                 </Card>
-                <Card>
+                <Card className="mb-0">
                 <CardBody>
-                        <Col md="12" sm="12">
-                            <h4 className="text-primary"><u>Material Details</u></h4><br />
+                        <Col md="12" sm="12" >
+                            <div className="text-primary "><u>Material details</u></div>
                         </Col>
                         <label></label>
                         <div  style={{
                             width: '100%',
                             overflowX: 'auto',
-                            maxHeight: "500px",
-                            border: "1px solid #ddd",
-                            paddingBottom: "100px", // <-- Add space after the scroll ends
-                            fontSize: "8pt"
+                            // maxHeight: "380px",
+                            // border: "1px solid #ddd",
+                            // paddingBottom: "40px",
+                            // fontSize: "7pt"
                         }}>
                         <table className="table table-bordered" 
                         style={{ width: '100%', minWidth: '3000px', textAlign: 'left', tableLayout: 'fixed' }}>
@@ -1500,6 +1579,7 @@ const RecieptEntryScreenDetails = ({ setShow, show, purchaseId,poNumbers,getLoad
                                 <th className="bg-primary text-white" style={{ width: "170px" }}>Invoice Qty</th>
                                 <th className="bg-primary text-white" style={{ width: "100px" }}>Remaining Qty</th>
                                 <th className="bg-primary text-white" style={{ width: "150px" }}>Storage</th>
+                                {showLotColumn && <th className="bg-primary text-white" style={{ width: "150px" }}>Lot No</th>}
                                 <th className="bg-primary text-white" style={{ width: "100px" }}>UOM</th>
                                 <th className="bg-primary text-white" style={{ width: "100px" }}>HSN & SAC Code</th>
                                 <th className="bg-primary text-white" style={{ width: "100px" }}>Rate</th>
@@ -1615,6 +1695,44 @@ const RecieptEntryScreenDetails = ({ setShow, show, purchaseId,poNumbers,getLoad
                                             onChange={(val) => handleMovementTypeChange(val, index, lineIndex)}
                                             />
                                         </td>
+                                        {showLotColumn && (
+                                            <td style={{ width: "150px", padding: "0.5rem" }}>
+                                                {(() => {
+                                                    const locationId =
+                                                        storageSelections[`${index}-${lineIndex}`]?.value ||
+                                                        lineItem?.LGORT;
+                                                    return (
+                                                        <CustomDropdownInput
+                                                            url={`${apiBaseUrl}MigoAutomationController/getLotDetails/${lineItem?.WERKS}/${locationId}`}
+                                                            // postData={
+                                                            //     Plant : lineItem?.WERKS,
+                                                            //     locationId ? { LocationId: locationId } : {}
+                                                            // }
+                                                            form={form}
+                                                            id="BIN"
+                                                            name="BIN"
+                                                            placeholder="BIN"
+                                                            isDisabled={!locationId}
+                                                            value={
+                                                                lotNo[`${index}-${lineIndex}`]
+                                                                    ? {
+                                                                          value: lotNo[`${index}-${lineIndex}`],
+                                                                          label: lotNo[`${index}-${lineIndex}`]
+                                                                      }
+                                                                    : null
+                                                            }
+                                                            onChange={(val) =>
+                                                                handleLotNo(
+                                                                    index,
+                                                                    lineIndex,
+                                                                    val?.value ?? ""
+                                                                )
+                                                            }
+                                                        />
+                                                    );
+                                                })()}
+                                            </td>
+                                        )}
                                         <td style={{ textAlign: "right" }}>{lineItem?.MEINS}</td>
                                         <td>{lineItem?.HSN}</td>
                                         <td>{lineItem?.RATE}</td>
@@ -1735,15 +1853,16 @@ const RecieptEntryScreenDetails = ({ setShow, show, purchaseId,poNumbers,getLoad
                <Row>
                <hr></hr>
                <Col md="12" sm="12">
-                    <h4 className="text-primary"><u>Cost Details</u></h4><br />
+                    <div className="text-primary receipt-section-title"><u>Cost details</u></div>
                 <div style={{ 
-                    marginTop: "20px",
-                    padding: "15px",
+                    marginTop: "10px",
+                    padding: "10px 12px",
                     border: "1px solid #ddd",
                     borderRadius: "5px",
                     background: "#f8f9fa",
                     width: "100%",
-                    maxWidth: "500px" // Adjust width as needed
+                    maxWidth: "420px",
+                    fontSize: "0.8rem"
                     }}>
                     <table style={{
                         width: "100%",
@@ -1755,13 +1874,13 @@ const RecieptEntryScreenDetails = ({ setShow, show, purchaseId,poNumbers,getLoad
                             borderBottom: index < data1.length - 1 ? "1px solid #eee" : "none"
                             }}>
                             <td style={{
-                                padding: "10px 0",
+                                padding: "5px 0",
                                 fontWeight: item.isTotal ? "bold" : "normal"
                             }}>
                                 {item.label}
                             </td>
                             <td style={{
-                                padding: "10px 0",
+                                padding: "5px 0",
                                 textAlign: "right",
                                 fontWeight: item.isTotal ? "bold" : "normal"
                             }}>
@@ -1778,13 +1897,13 @@ const RecieptEntryScreenDetails = ({ setShow, show, purchaseId,poNumbers,getLoad
                                 <Col md="12" sm="12"><hr></hr></Col>
 
                                 <Col md="12" sm="12">
-                                    <h4 className="text-primary"><u>Weighment Info In Kg's</u></h4><br />
+                                    <div className="text-primary receipt-section-title"><u>Weighment info (kg)</u></div>
                                 </Col>
 
                                 {poData[0].moduleTypeId == 12 || poData[0].moduleTypeId == 15 || poData[0].moduleTypeId == 21 || poData[0].moduleTypeId == 25 || poData[0].moduleTypeId == 29 || poData[0].moduleTypeId == 33 || poData[0].moduleTypeId == 34 || poData[0].moduleTypeId == 1 || poData[0].moduleTypeId == 2  || poData[0].moduleTypeId == 38 ?
                                     <>
                                         <Col md="12" sm="12">
-                                            <table className="table table-bordered">
+                                            <table className="table table-bordered table-sm table-compact">
                                                 <thead>
                                                     <tr>
                                                         <th className="bg-primary text-white text-center">Document Number</th>
@@ -1888,7 +2007,7 @@ const RecieptEntryScreenDetails = ({ setShow, show, purchaseId,poNumbers,getLoad
                     <Col md="6" sm="6">
                     <FormGroup className="d-flex justify-content-start mb-0">
                         <Button.Ripple color="danger" className="mt-2" onClick={removeSelectedLines}>
-                             Remove Selected Lines
+                             Remove Lines
                         </Button.Ripple>
                     </FormGroup>
                     </Col>

@@ -144,4 +144,84 @@ class Master extends BaseApiController
     return  $this->sendSuccessResult($master->getCommonActiveStatusG3());    
 
   }
+  /**
+   * Get warehouses for the logged-in user (session).
+   * Filtered by user's plants via master_user_plant → master_plant.WH_CODE.
+   * No request body needed; uses login session USERID.
+   */
+  public function getWarehousesByUserId()
+  {
+    $userId = (int) (session()->get('USERID') ?? 0);
+   // echo "userId Venkat".$userId;
+    //log_message('info', 'getWarehousesByUserId: USERID = ' . $userId);
+    if ($userId <= 0) {
+      return $this->sendErrorResult('Login required');
+    }
+    $master = new MasterModel();
+    return $this->sendSuccessResult($master->getWarehousesByUserId($userId));
+  }
+
+  /**
+   * Get material/stock list from SAP (zzgp_api/zzwh_ss/wh_stock).
+   * POST body: wh_code (or warehouseid), plant, stro_loc (or storagelocationid), bin, material (optional).
+   * Returns same format as Relot SAP_Lotwise_StockDetails: { success: 1, results: [...] }.
+   */
+  public function getMaterialList()
+  {
+    $postData = $this->request->getJSON();
+    if (!$postData) {
+      return $this->response->setStatusCode(400)->setJSON(['success' => 0, 'message' => 'Invalid or missing JSON body']);
+    }
+
+    $whCode = $this->scalarFromPost($postData->wh_code ?? $postData->warehouseid ?? '');
+    $plant = $this->scalarFromPost($postData->plant ?? $postData->plantId ?? '');
+    $stroLoc = $this->scalarFromPost($postData->stro_loc ?? $postData->storagelocationid ?? '');
+    $bin = $this->scalarFromPost($postData->bin ?? '');
+    $material = $this->scalarFromPost($postData->material ?? '');
+
+    $master = new MasterModel();
+    $results = $master->getMaterialListFromSap($whCode, $plant, $stroLoc, $bin, $material);
+    return $this->response->setJSON(['success' => 1, 'results' => $results]);
+  }
+
+  /**
+   * QC lot rows from receipt_material_info (non-empty qcLot and lotNo), ascending by id.
+   * Optional GET filters: start_date, end_date (Y-m-d).
+   */
+  public function getQCLotList()
+  {
+    $startDate = trim((string) ($this->request->getGet('start_date') ?? $this->request->getGet('startDate') ?? ''));
+    $endDate = trim((string) ($this->request->getGet('end_date') ?? $this->request->getGet('endDate') ?? ''));
+    $master = new MasterModel();
+    $results = $master->getQCLotListFromReceiptMaterial($startDate, $endDate);
+    return $this->response->setJSON(['success' => 1, 'results' => $results]);
+  }
+
+  /**
+   * Submit one Lot Updation row to SAP LT06/LT12 stock-move API.
+   * POST body: row (object) or direct row fields.
+   */
+  public function submitQCLotRow()
+  {
+    $postData = $this->request->getJSON(true);
+    if (!is_array($postData)) {
+      $postData = [];
+    }
+    $row = (isset($postData['row']) && is_array($postData['row'])) ? $postData['row'] : $postData;
+
+    $master = new MasterModel();
+    $result = $master->submitQCLotRowToSap($row);
+    return $this->response->setJSON($result);
+  }
+
+  /**
+   * Get scalar value from POST field (object with value/label or scalar).
+   */
+  private function scalarFromPost($v)
+  {
+    if (is_object($v)) {
+      return (string) ($v->value ?? $v->label ?? '');
+    }
+    return (string) ($v ?? '');
+  }
 }

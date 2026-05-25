@@ -852,6 +852,7 @@ const RecieptEntryScreenApprovalDetails = ({ setShow, show, purchaseId,poNumbers
                                     <th className="bg-primary text-white" width='20%'>Material</th>
                                     <th className="bg-primary text-white" width='30%'>Material Desc</th>
                                     <th className="bg-primary text-white" width='15%'>Storage</th>
+                                    <th className="bg-primary text-white" width='15%'>Lot No</th>
                                     <th className="bg-primary text-white" width='15%'>PO Qty</th>
                                     <th className="bg-primary text-white" width='17%'>Completed Qty</th>
                                     <th className="bg-primary text-white" width='15%'>Open Qty</th>
@@ -883,6 +884,7 @@ const RecieptEntryScreenApprovalDetails = ({ setShow, show, purchaseId,poNumbers
                                         <td>{materialData?.material}</td>
                                         <td>{materialData?.materialDescription}</td>
                                         <td>{materialData?.storageLocation}</td>
+                                        <td>{materialData?.lotNo}</td>
                                         <td>{materialData?.poQty}</td>
                                         <td >{materialData?.grnQty}</td>
                                         <td>{materialData?.openQty}</td>

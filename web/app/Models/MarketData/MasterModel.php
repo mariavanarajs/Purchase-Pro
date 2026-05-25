@@ -2,6 +2,7 @@
 
 namespace App\Models\MarketData;
 
+use App\Helpers\SapUrlHelper;
 use CodeIgniter\Model;
 
 class MasterModel extends Model
@@ -140,5 +141,308 @@ class MasterModel extends Model
   {
     $builder = $this->db->query("select id as value, label from activestatus where ListGroup = 'G3' order by label");
     return  $builder->getResultArray();
+  }
+    /**
+   * Get warehouses allowed for the given login user.
+   * Uses master_user_plant (user's plant IDs) → master_plant (WH_CODE) → warehouse_master (same WH_CODE).
+   * Returns only warehouses whose WH_CODE matches plants assigned to the user.
+   *
+   * @param int $userId Login user ID (e.g. from session or request)
+   * @return array Same format as getwarehouses: [ ['value' => WH_CODE, 'label' => 'WH_CODE-WH_NAME'], ... ]
+   */
+  public function getWarehousesByUserId($userId)
+  {
+    $userId = (int) $userId;
+    // User ID 1: list all warehouses
+    if ($userId === 1) {
+      return $this->db->query(
+        "SELECT WH_CODE AS value, CONCAT(WH_CODE, '-', WH_NAME) AS label FROM warehouse_master ORDER BY WH_NAME"
+      )->getResultArray();
+    }
+    $sql = "SELECT w.WH_CODE AS value, CONCAT(w.WH_CODE, '-', w.WH_NAME) AS label
+            FROM warehouse_master w
+            INNER JOIN master_plant p ON p.WH_CODE = w.WH_CODE AND p.RecStatus = '1'
+            WHERE p.ID IN (SELECT PLANT_ID FROM master_user_plant WHERE USER_ID = ? AND RecStatus = 1)
+            ORDER BY w.WH_NAME";
+    $builder = $this->db->query($sql, [$userId]);
+    return $builder->getResultArray();
+  }
+
+  /**
+   * Get material/stock list from SAP (zzgp_api/zzwh_ss/wh_stock).
+   *
+   * @param string $whCode Warehouse code
+   * @param string $plant Plant code
+   * @param string $stroLoc Storage location
+   * @param string $bin Bin
+   * @param string $material Material (optional)
+   * @return array List of rows from SAP
+   */
+  public function getMaterialListFromSap($whCode, $plant, $stroLoc, $bin, $material = '')
+  {
+    $urlPath = "zzgp_api/zzwh_ss/wh_stock?sap-client=900&wh_code=" . urlencode((string) $whCode)
+      . "&plant=" . urlencode((string) $plant)
+      . "&stro_loc=" . urlencode((string) $stroLoc)
+      . "&bin=" . urlencode((string) $bin)
+      . "&material=" . urlencode((string) $material);
+    $sapResult = SapUrlHelper::getWhDatas($urlPath);
+    return $this->extractSapResultsArray($sapResult);
+  }
+
+  /**
+   * Get QC lot update list from SAP (zzgp_api/zzwh_ss/wh_qc) via GET query.
+   *
+   * @param string $qaLot QA Lot number
+   * @return array List of rows from SAP
+   */
+  public function getQCLotListFromSap($qaLot)
+  {
+    $urlPath = "zzgp_api/zzwh_ss/wh_qc?sap-client=900&qa_lot=" . urlencode((string) $qaLot);
+    $sapResult = SapUrlHelper::getWhDatas($urlPath);
+    return $this->extractSapResultsArray($sapResult);
+  }
+
+  /**
+   * Get QC lot update list from receipt_material_info, enriched from SAP wh_qc (qa_lot) per row.
+   * Rows must have non-empty qcLot and a non-empty lot (lotNo or batchCode).
+   * Optional date filters apply on rmi.createdAt (Y-m-d).
+   *
+   * @return array Rows include SAP_STATUS and SAP_QC_CODE when SAP returns data.
+   */
+  public function getQCLotListFromReceiptMaterial($startDate = '', $endDate = '')
+  {
+    $sql = "SELECT
+              rmi.poNumber AS PO_NO,
+              rmi.migoNumber AS GRN_NO,
+              rmi.material AS MATERIAL,
+              rmi.materialDescription AS MATERIAL_DESC,
+              rmi.plantCode AS PLANT,
+              rmi.whCode AS WH_CODE,
+              rmi.storageLocation AS STO_LOC,
+              rmi.toNo AS TO_NO,
+              rmi.toLine AS TO_LINE,
+              rmi.batchCode AS BATCH,
+              CASE rmi.status
+                WHEN 1 THEN 'Need to QA'
+                WHEN 2 THEN 'Waiting for QA'
+                WHEN 3 THEN 'Released'
+                ELSE 'Need to QA'
+              END AS INSPECTION_STATUS,
+              rmi.qcLot AS QA_LOT,
+              COALESCE(rmi.lotNo, rmi.batchCode) AS LOT_NO,
+              rmi.receivedQty AS RECEIVING_QTY,
+              rmi.uom AS UOM,
+              rmi.grnQty AS COMPLETED_QTY,
+              rmi.openQty AS OPENING_QTY,
+              rmi.poRate AS GROSS_PRICE,
+              rmi.poQty AS PO_QTY,
+              rmi.vendorName AS VENDOR_NAME
+            FROM receipt_material_info AS rmi
+            WHERE rmi.status <> 0
+              AND TRIM(COALESCE(rmi.qcLot, '')) <> ''
+              AND TRIM(COALESCE(rmi.lotNo, rmi.batchCode, '')) <> ''";
+
+    $params = [];
+    $startDate = trim((string) $startDate);
+    $endDate = trim((string) $endDate);
+    if ($startDate !== '' && $endDate !== '') {
+      $sql .= " AND DATE(rmi.createdAt) BETWEEN ? AND ?";
+      $params[] = $startDate;
+      $params[] = $endDate;
+    } elseif ($startDate !== '') {
+      $sql .= " AND DATE(rmi.createdAt) >= ?";
+      $params[] = $startDate;
+    } elseif ($endDate !== '') {
+      $sql .= " AND DATE(rmi.createdAt) <= ?";
+      $params[] = $endDate;
+    }
+
+    $sql .= " ORDER BY rmi.id ASC";
+    $rows = $this->db->query($sql, $params)->getResultArray();
+    return $this->mergeWhQcSapIntoReceiptRows($rows);
+  }
+
+  /**
+   * Push one Lot Updation row to SAP LT06/LT12 movement API (wh_stock).
+   *
+   * @param array<string, mixed> $row
+   * @return array<string, mixed>
+   */
+  public function submitQCLotRowToSap(array $row): array
+  {
+    $pick = static function (array $src, array $keys, $default = '') {
+      foreach ($keys as $k) {
+        if (array_key_exists($k, $src) && $src[$k] !== null && $src[$k] !== '') {
+          return (string) $src[$k];
+        }
+      }
+      return (string) $default;
+    };
+
+    $quantity = $pick($row, ['quantity', 'QUANTITY', 'RECEIVING_QTY', 'receivedQty'], '1');
+    $payloadRow = [
+      'wh_code'  => $pick($row, ['wh_code', 'WH_CODE', 'whCode'], 'SS1'),
+      'plant'    => $pick($row, ['plant', 'PLANT', 'plantCode'], ''),
+      'sto_loc'  => $pick($row, ['sto_loc', 'STO_LOC', 'storageLocation'], 'CP04'),
+      'material' => $pick($row, ['material', 'MATERIAL'], ''),
+      'quantity' => $quantity === '' ? '1' : $quantity,
+      'uom'      => $pick($row, ['uom', 'UOM'], ''),
+      'po_no'    => $pick($row, ['po_no', 'PO_NO', 'poNumber'], ''),
+      'to_lot'   => $pick($row, ['to_lot', 'TO_LOT', 'LOT_NO', 'lotNo'], ''),
+      'to_no'    => $pick($row, ['to_no', 'TO_NO', 'toNo'], ''),
+      'to_line'  => $pick($row, ['to_line', 'TO_LINE', 'toLine'], ''),
+      'batch'    => $pick($row, ['batch', 'BATCH', 'batchCode'], ''),
+      'qc_lot'   => $pick($row, ['qc_lot', 'QC_LOT', 'QA_LOT', 'qcLot'], ''),
+    ];
+
+    $missing = [];
+    foreach (['plant', 'material', 'uom', 'po_no', 'to_lot', 'to_no', 'to_line', 'qc_lot'] as $req) {
+      if (trim((string) $payloadRow[$req]) === '') {
+        $missing[] = $req;
+      }
+    }
+    if ($missing !== []) {
+      return [
+        'success' => 0,
+        'message' => 'Missing required fields for SAP push: ' . implode(', ', $missing),
+        'payload' => $payloadRow,
+      ];
+    }
+
+    $urlPath = '/zzgp_api/zzwh_ss/wh_stock?sap-client=900';
+    $body = json_encode([$payloadRow], JSON_UNESCAPED_UNICODE);
+    $payloadJson = $body === false ? '[]' : $body;
+    // wh_stock requires CSRF token + cookie handshake; PushToSap handles that.
+    $sapRaw = SapUrlHelper::PushToSap($urlPath, $payloadJson);
+    $sapDecoded = is_string($sapRaw) ? json_decode($sapRaw, true) : $sapRaw;
+    $sapText = is_string($sapRaw) ? $sapRaw : json_encode($sapRaw);
+    $sapTextUpper = strtoupper((string) $sapText);
+
+    $isSapFailure =
+      $sapRaw === false ||
+      $sapRaw === null ||
+      strpos($sapTextUpper, 'CSRF TOKEN VALIDATION FAILED') !== false ||
+      strpos($sapTextUpper, 'FORBIDDEN') !== false ||
+      strpos($sapTextUpper, 'UNAUTHORIZED') !== false ||
+      strpos($sapTextUpper, 'HTTP/1.1 4') !== false ||
+      strpos($sapTextUpper, 'HTTP/1.1 5') !== false;
+
+    if ($isSapFailure) {
+      return [
+        'success' => 0,
+        'message' => 'SAP submission failed',
+        'payload' => $payloadRow,
+        'sap_response' => $sapDecoded ?? $sapRaw,
+      ];
+    }
+
+    return [
+      'success' => 1,
+      'message' => 'Submitted to SAP successfully',
+      'payload' => $payloadRow,
+      'sap_response' => $sapDecoded ?? $sapRaw,
+    ];
+  }
+
+  /**
+   * For each receipt row, call zzgp_api/zzwh_ss/wh_qc?qa_lot=… (cached per qa_lot) and attach SAP STATUS / QC_CODE.
+   *
+   * @param array<int, array<string, mixed>> $rows
+   * @return array<int, array<string, mixed>>
+   */
+  private function mergeWhQcSapIntoReceiptRows(array $rows): array
+  {
+    $sapByQaLot = [];
+
+    foreach ($rows as &$row) {
+     
+      $qaLot = trim((string) ($row['QA_LOT'] ?? ''));
+      if ($qaLot === '') {
+        $row['SAP_STATUS'] = '';
+        $row['SAP_QC_CODE'] = '';
+        continue;
+      }
+
+      if (!array_key_exists($qaLot, $sapByQaLot)) {
+        $sapByQaLot[$qaLot] = $this->getQCLotListFromSap($qaLot);
+      }
+
+      $sapRow = $this->pickSapQcRow($sapByQaLot[$qaLot], (string) ($row['LOT_NO'] ?? ''));
+      if ($sapRow !== null) {
+        $row['SAP_STATUS'] = (string) ($sapRow['STATUS'] ?? $sapRow['status'] ?? '');
+        $row['SAP_QC_CODE'] = (string) ($sapRow['QC_CODE'] ?? $sapRow['qc_code'] ?? '');
+      } else {
+        $row['SAP_STATUS'] = '';
+        $row['SAP_QC_CODE'] = '';
+      }
+    }
+    unset($row);
+
+    return $rows;
+  }
+
+  /**
+   * Choose SAP wh_qc line: match LOT_NO to receipt lot when multiple rows returned.
+   *
+   * @param array<int, mixed> $sapRows
+   */
+  private function pickSapQcRow(array $sapRows, string $receiptLotNo): ?array
+  {
+    $sapRows = array_values(array_filter($sapRows, static function ($r) {
+      return is_array($r);
+    }));
+
+    if ($sapRows === []) {
+      return null;
+    }
+
+    $want = trim($receiptLotNo);
+    if ($want !== '') {
+      foreach ($sapRows as $sr) {
+        $lot = isset($sr['LOT_NO']) ? trim((string) $sr['LOT_NO']) : '';
+        if ($lot === '') {
+          $lot = isset($sr['lot_no']) ? trim((string) $sr['lot_no']) : '';
+        }
+        if ($lot !== '' && $want !== '' && (string) $lot === (string) $want) {
+          return $sr;
+        }
+      }
+    }
+
+    /** @var array<string, mixed> */
+    return $sapRows[0];
+  }
+
+  /**
+   * Normalize SAP/OData response to a plain array of rows.
+   *
+   * @param mixed $sapResult Raw response from SapUrlHelper::getWhDatas
+   * @return array
+   */
+  private function extractSapResultsArray($sapResult)
+  {
+    if ($sapResult === null || $sapResult === false) {
+      return [];
+    }
+    $decoded = is_string($sapResult) ? json_decode($sapResult, true) : $sapResult;
+    if (is_array($decoded) && isset($decoded[0]) && is_array($decoded[0])) {
+      return $decoded;
+    }
+    if (is_array($decoded) && isset($decoded['results']) && is_array($decoded['results'])) {
+      return $decoded['results'];
+    }
+    if (is_array($decoded) && isset($decoded['d']['results']) && is_array($decoded['d']['results'])) {
+      return $decoded['d']['results'];
+    }
+    if (is_array($decoded) && isset($decoded['d']) && is_array($decoded['d'])) {
+      $d = $decoded['d'];
+      if (isset($d['results']) && is_array($d['results'])) {
+        return $d['results'];
+      }
+      if (isset($d[0])) {
+        return $d;
+      }
+    }
+    return [];
   }
 }

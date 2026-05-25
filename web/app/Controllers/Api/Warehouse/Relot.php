@@ -89,45 +89,62 @@ class Relot extends BaseApiController
   
    public function SAP_Lotwise_StockDetails()
     {
-      $postData = $this->request->getJSON(); 
-  
-      $WHCODE = $postData->warehouseid;    
-      $plantId = $postData->plantId;
-      $locationId = $postData->storagelocationid;
-      $lotId = $postData->lotId;
-      $wheat = $postData->WheatVariety;
-      // print_r($postData);exit;
-      if($WHCODE){
-        $model = new RelotModel();
+      $postData = $this->request->getJSON();
+      if (!$postData) {
+        return $this->response->setStatusCode(400)->setJSON(['success' => 0, 'message' => 'Invalid or missing JSON body']);
+      }
+
+      $WHCODE = $postData->warehouseid ?? '';
+      $plantId = $postData->plantId ?? '';
+      $locationId = $postData->storagelocationid ?? '';
+      $lotId = $postData->lotId ?? '';
+      $wheat = $postData->WheatVariety ?? '';
+
+      $model = new RelotModel();
+
+      if ($WHCODE !== '') {
         $res = $model->getWhcodeId($WHCODE);
-        $WHCODE = $res[0]['WH_CODE'];
+        if (!empty($res) && isset($res[0]['WH_CODE'])) {
+          $WHCODE = $res[0]['WH_CODE'];
+        }
       }
-      if($plantId){
-        $model = new RelotModel();
+      if ($plantId !== '') {
         $res = $model->getPlantId($plantId);
-        $plantId = $res[0]['WERKS'];
+        if (!empty($res) && isset($res[0]['WERKS'])) {
+          $plantId = $res[0]['WERKS'];
+        }
       }
-      // print_r($plantId);exit;
-      $urlPath ="zwh_stocks/stock?sap-client=900&Warehouse_code=$WHCODE&Plant=$plantId&Stoage_Location=$locationId&Lot=$lotId&Segment=$wheat";
+
+      $urlPath = "zwh_stocks/stock?sap-client=900&Warehouse_code=" . urlencode($WHCODE) . "&Plant=" . urlencode($plantId) . "&Stoage_Location=" . urlencode($locationId) . "&Lot=" . urlencode($lotId) . "&Segment=" . urlencode($wheat);
       $sapResult = SapUrlHelper::getWhDatas($urlPath);
-      
-       $sapResultArray = json_decode($sapResult, true);
 
-        if ($wheat && empty($sapResultArray[0]['WAREHOUSE_CODE'])) {
-          $urlPath ="zwh_stocks/stock?sap-client=900&Warehouse_code=$WHCODE&Plant=$plantId&Stoage_Location=$locationId&Lot=$lotId&Segment=";
-          $sapResult = SapUrlHelper::getWhDatas($urlPath);
-          $sapResultArray = json_decode($sapResult, true);
-          if (!empty($sapResultArray) && !empty($wheat)) {
-            $filteredData = array_filter($sapResultArray, function ($item) use ($wheat) {
-                return isset($item['SEGMENT']) && stripos($item['SEGMENT'], $wheat) !== false;
-            });
+      $sapResultArray = is_string($sapResult) ? json_decode($sapResult, true) : $sapResult;
+      if (!is_array($sapResultArray)) {
+        $sapResultArray = [];
+      }
 
-            // If filtered data is empty, return full dataset
-            $finalResult = !empty($filteredData) ? array_values($filteredData) : $sapResultArray;
-            $sapResult = json_encode($finalResult);
-          } 
-       } 
+      if ($wheat !== '' && empty($sapResultArray[0]['WAREHOUSE_CODE'])) {
+        $urlPath = "zwh_stocks/stock?sap-client=900&Warehouse_code=" . urlencode($WHCODE) . "&Plant=" . urlencode($plantId) . "&Stoage_Location=" . urlencode($locationId) . "&Lot=" . urlencode($lotId) . "&Segment=";
+        $sapResult = SapUrlHelper::getWhDatas($urlPath);
+        $sapResultArray = is_string($sapResult) ? json_decode($sapResult, true) : $sapResult;
+        if (!is_array($sapResultArray)) {
+          $sapResultArray = [];
+        }
+        if (!empty($sapResultArray) && $wheat !== '') {
+          $filteredData = array_filter($sapResultArray, function ($item) use ($wheat) {
+            return isset($item['SEGMENT']) && stripos($item['SEGMENT'], $wheat) !== false;
+          });
+          $finalResult = !empty($filteredData) ? array_values($filteredData) : $sapResultArray;
+          $sapResult = json_encode($finalResult);
+        }
+      } else {
+        $sapResult = is_string($sapResult) ? $sapResult : json_encode($sapResultArray);
+      }
 
-      return json_encode(["success" => 1, "results" => json_decode($sapResult)]);
-  } 
+      $results = is_string($sapResult) ? json_decode($sapResult) : $sapResult;
+      if ($results === null) {
+        $results = [];
+      }
+      return $this->response->setJSON(['success' => 1, 'results' => $results]);
+    } 
 }
