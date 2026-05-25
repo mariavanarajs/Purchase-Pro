@@ -2642,6 +2642,18 @@ const Routes = [
     path: "/SurveyorPrintForm/:id",
     component: lazy(() => import("../../views/SDI/SurveyorPrintForm")),
   },
+  {
+    path: "/warehouse/SsStockReport",
+    component: lazy(() => import("../../views/warehouse/SsStockReport")),
+  },
+  {
+    path: "/warehouse/SsStockAuditReport",
+    component: lazy(() => import("../../views/warehouse/SsStockReport")),
+  },
+  {
+    path: "/warehouse/LotUpdationScreen",
+    component: lazy(() => import("../../views/warehouse/LotUpdationScreen")),
+  },
 ];
 
 export { DefaultRoute, TemplateTitle, Routes };

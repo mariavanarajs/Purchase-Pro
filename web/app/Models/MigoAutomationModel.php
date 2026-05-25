@@ -156,6 +156,7 @@ class MigoAutomationModel extends Model
                 po_type.po_type,
                 po_type.invoiceQty,
                 po_type.batchCode,
+                po_type.isLotStatus,
                 gate_in_out_info.gateInDateStamp
             ")
             ->join('gate_in_out_info', 
@@ -214,24 +215,43 @@ class MigoAutomationModel extends Model
         $sap_data_array1 = [];
         $table_data = []; // Initialize an empty array
         $CurrentDateTime=date("Y-m-d H:i:s");
+       //echo "<pre>";print_r($data);exit("Data");
+
+        // Guard against invalid payloads (e.g., controller couldn't parse JSON).
+        if ($data === null || !isset($data->MaterialDetails) || $data->MaterialDetails === null) {
+            return [0, "Invalid payload: MaterialDetails missing"];
+        }
+
+        // Normalize frequently-used optional header fields to prevent PHP 8 "Undefined property" fatals.
+        $data->isReceipt = $data->isReceipt ?? 0;
+        $data->po_type = $data->po_type ?? 0;
+        $data->invoiceCopy = $data->invoiceCopy ?? '';
+        $data->vaNumber = $data->vaNumber ?? '';
+        $data->vehicleNo = $data->vehicleNo ?? '';
+        //echo "<pre>";print_r($data);exit("Data");
+
         foreach ($data->MaterialDetails as $detail) {
             foreach ($detail->materials as $resultRow) {
+                //echo "<pre>";print_r($resultRow->lotNo);exit;
+                $selectedLotNo = $resultRow->lotNo ?? '';
+                //echo "<pre>";print_r($selectedLotNo);exit("Selected Lot No");
                 // Safe date conversion
-                $invoiceDate = DateTime::createFromFormat('d-m-Y', $resultRow->invoiceDate);
+                $invoiceDate = DateTime::createFromFormat('d-m-Y', $resultRow->invoiceDate ?? '');
                 $formattedInvoiceDate = $invoiceDate ? $invoiceDate->format('Ymd') : null;
-                $postingDate = DateTime::createFromFormat('Y-m-d', $resultRow->postingDate);
+                $postingDate = DateTime::createFromFormat('Y-m-d', $resultRow->postingDate ?? '');
                 $postingDate = $postingDate ? $postingDate->format('Ymd') : null;
-                $ManufacturingDate = DateTime::createFromFormat('Y-m-d', $resultRow->ManufacturingDate);
+                $ManufacturingDate = DateTime::createFromFormat('Y-m-d', $resultRow->ManufacturingDate ?? '');
                 $ManufacturingDate = $ManufacturingDate ? $ManufacturingDate->format('Ymd') : null;
-                $expiryDate = DateTime::createFromFormat('Y-m-d', $resultRow->expiryDate);
+                $expiryDate = DateTime::createFromFormat('Y-m-d', $resultRow->expiryDate ?? '');
                 $expiryDate = $expiryDate ? $expiryDate->format('Ymd') : null;
                 // SAP Data Array
                 $CurrentDate=date("Y-m-d");
                 $fileContents = '';
                 $filename = '';
                 $fileformat = '';
-                if($resultRow->extraAttachments){
-                    $fileUrl = str_replace(' ', '%20', $resultRow->extraAttachments); // Fix spaces in URL
+                $extraAttachments = $resultRow->extraAttachments ?? null;
+                if(!empty($extraAttachments)){
+                    $fileUrl = str_replace(' ', '%20', $extraAttachments); // Fix spaces in URL
             
                     $fileContents = @file_get_contents($fileUrl);
                     $fileContents = base64_encode($fileContents);
@@ -271,11 +291,12 @@ class MigoAutomationModel extends Model
                     "filename"=>$filename ?? '',
                     "fileformat"=>$fileformat ?? '',
                     "other_attch"=>$fileContents ?? '',
-                    "LLR"=>$resultRow->llrNo,
-                    "weigh_no"=>$resultRow->weighmentNo,
-                    "rec_record"=>$resultRow->manualRecord,
-                    "batch_code"=>$resultRow->batchCode,
+                    "LLR"=>$resultRow->llrNo ?? '',
+                    "weigh_no"=>$resultRow->weighmentNo ?? '',
+                    "rec_record"=>$resultRow->manualRecord ?? '',
+                    "batch_code"=>$resultRow->batchCode ?? '',
                     "expiry_date"=>$expiryDate,
+                   // "lotNo"=>$selectedLotNo
                 );
                 $sap_data_array1[] = array(
                     "packno" => $resultRow->packNo ?? '',
@@ -340,51 +361,53 @@ class MigoAutomationModel extends Model
                     "extraAttachments"=>$resultRow->extraAttachments ?? '',
                     "manufacturingDate"=>$resultRow->ManufacturingDate ?? '',
                     "invoiceQty"=>$resultRow->InvoiceQty ?? 0,
-                    "llrNo"=>$resultRow->llrNo,
-                    "weighmentNo"=>$resultRow->weighmentNo,
-                    "manualRecord"=>$resultRow->manualRecord,
-                    "materialRate"=>$resultRow->materialRate,
-                    "materialTax"=>$resultRow->materialTax,
-                    "materialAmount"=>$resultRow->materialAmount,
-                    "materialFreight"=>$resultRow->materialFreight,
-                    "materialPacking"=>$resultRow->materialPacking,
-                    "materialLoading"=>$resultRow->materialLoading,
-                    "materialUnloading"=>$resultRow->materialUnloading,
-                    "materialOther"=>$resultRow->materialOther,
-                    "invoiceFreightAmount"=>$resultRow->invoiceFreightAmount,
-                    "invoiceMaterialAmount"=>$resultRow->invoiceMaterialAmount,
-                    "invoicePackingAmount"=>$resultRow->invoicePackingAmount,
-                    "bargainNote"=>$resultRow->bargainNote,
-                    "deliveryChallanCopy"=>$resultRow->deliveryChallanCopy,
-                    "ewayBillCopy"=>$resultRow->ewayBillCopy,
-                    "eInvoiceCopy"=>$resultRow->eInvoiceCopy,
-                    "qcCertificateInternalCopy"=>$resultRow->qcCertificateInternalCopy,
-                    "qcCertificateExternalCopy"=>$resultRow->qcCertificateExternalCopy,
-                    "externalWbCopy"=>$resultRow->externalWbCopy,
-                    "vendorEmailCopy"=>$resultRow->vendorEmailCopy,
-                    "projectTeamAcknowledgement"=>$resultRow->projectTeamAcknowledgement,
-                    "creditNoteCopy"=>$resultRow->creditNoteCopy,
-                    "discountAmount"=>$resultRow->discount,
-                    "discountPercentage"=>$resultRow->discount,
-                    "materialIneligible"=>$resultRow->materialIneligible,
-                    "invoiceLoadingAmount"=>$resultRow->invoiceLoadingAmount,
-                    "invoiceUnloadingAmount"=>$resultRow->invoiceUnloadingAmount,
-                    "invoiceOtherAmount"=>$resultRow->invoiceOtherAmount,
-                    "invoiceIneligibleAmount"=>$resultRow->invoiceIneligibleAmount,
-                    "taxPercentage"=>$resultRow->taxPercentage,
-                    "batchCode"=>$resultRow->batchCode,
-                    "expiryDate"=>$resultRow->expiryDate,
-                    "freightCost"=>$resultRow->freightCost,
-                    "materialCost"=>$resultRow->materialCost,
-                    "packingCost"=>$resultRow->packingCost,
-                    "loadingCost"=>$resultRow->loadingCost,
-                    "unloadingCost"=>$resultRow->unloadingCost,
-                    "otherCost"=>$resultRow->otherCost,
-                    "ineligibleCost"=>$resultRow->ineligibleCost,
-                    "discountCost"=>$resultRow->discountCost,
-                    "rcmValue"=>$resultRow->rcmValue,
-                    "jitc"=>$resultRow->jitcValue,
-                    "cess"=>$resultRow->cessValue,
+                    "llrNo"=>$resultRow->llrNo ?? '',
+                    "weighmentNo"=>$resultRow->weighmentNo ?? '',
+                    "manualRecord"=>$resultRow->manualRecord ?? '',
+                    "materialRate"=>$resultRow->materialRate ?? 0,
+                    "materialTax"=>$resultRow->materialTax ?? 0,
+                    "materialAmount"=>$resultRow->materialAmount ?? 0,
+                    "materialFreight"=>$resultRow->materialFreight ?? 0,
+                    "materialPacking"=>$resultRow->materialPacking ?? 0,
+                    "materialLoading"=>$resultRow->materialLoading ?? 0,
+                    "materialUnloading"=>$resultRow->materialUnloading ?? 0,
+                    "materialOther"=>$resultRow->materialOther ?? 0,
+                    "invoiceFreightAmount"=>$resultRow->invoiceFreightAmount ?? 0,
+                    "invoiceMaterialAmount"=>$resultRow->invoiceMaterialAmount ?? 0,
+                    "invoicePackingAmount"=>$resultRow->invoicePackingAmount ?? 0,
+                    "bargainNote"=>$resultRow->bargainNote ?? null,
+                    "deliveryChallanCopy"=>$resultRow->deliveryChallanCopy ?? null,
+                    "ewayBillCopy"=>$resultRow->ewayBillCopy ?? null,
+                    "eInvoiceCopy"=>$resultRow->eInvoiceCopy ?? null,
+                    "qcCertificateInternalCopy"=>$resultRow->qcCertificateInternalCopy ?? null,
+                    "qcCertificateExternalCopy"=>$resultRow->qcCertificateExternalCopy ?? null,
+                    "externalWbCopy"=>$resultRow->externalWbCopy ?? null,
+                    "vendorEmailCopy"=>$resultRow->vendorEmailCopy ?? null,
+                    "projectTeamAcknowledgement"=>$resultRow->projectTeamAcknowledgement ?? null,
+                    "creditNoteCopy"=>$resultRow->creditNoteCopy ?? null,
+                    "discountAmount"=>$resultRow->discount ?? 0,
+                    "discountPercentage"=>$resultRow->discount ?? 0,
+                    "materialIneligible"=>$resultRow->materialIneligible ?? 0,
+                    "invoiceLoadingAmount"=>$resultRow->invoiceLoadingAmount ?? 0,
+                    "invoiceUnloadingAmount"=>$resultRow->invoiceUnloadingAmount ?? 0,
+                    "invoiceOtherAmount"=>$resultRow->invoiceOtherAmount ?? 0,
+                    "invoiceIneligibleAmount"=>$resultRow->invoiceIneligibleAmount ?? 0,
+                    "taxPercentage"=>$resultRow->taxPercentage ?? 0,
+                    // Keep all variants for compatibility with existing DB column naming.
+                    "lotNo" => $selectedLotNo,
+                    "batchCode"=>$resultRow->batchCode ?? '',
+                    "expiryDate"=>$resultRow->expiryDate ?? '',
+                    "freightCost"=>$resultRow->freightCost ?? 0,
+                    "materialCost"=>$resultRow->materialCost ?? 0,
+                    "packingCost"=>$resultRow->packingCost ?? 0,
+                    "loadingCost"=>$resultRow->loadingCost ?? 0,
+                    "unloadingCost"=>$resultRow->unloadingCost ?? 0,
+                    "otherCost"=>$resultRow->otherCost ?? 0,
+                    "ineligibleCost"=>$resultRow->ineligibleCost ?? 0,
+                    "discountCost"=>$resultRow->discountCost ?? 0,
+                    "rcmValue"=>$resultRow->rcmValue ?? 0,
+                    "jitc"=>$resultRow->jitcValue ?? 0,
+                    "cess"=>$resultRow->cessValue ?? 0,
                 );
             }
         }
@@ -434,6 +457,69 @@ class MigoAutomationModel extends Model
                 $row["migoNumber"] = $document_no ?? ''; // Assign MIGO number
                 $row["status"] = $data->isReceipt == 0 ? 2 : 1; // Assign MIGO number
             }
+
+            // Store QC / Transfer order details coming from SAP MIRO_LINE
+            // into `receipt_material_info`.
+            //
+            // DB schema uses unclear casing/underscore style (e.g. qcLot vs qc_lot),
+            // but we filter payload keys against real DB columns right before insert,
+            // so we can safely populate multiple key variants.
+             //   echo "<pre>";print_r($MIRO_LINE);exit("MIRO_LINE");
+            if (is_array($MIRO_LINE) && !empty($MIRO_LINE)) {
+                $miroLookup = [];
+                foreach ($MIRO_LINE as $miro) {
+                    $poNo = trim((string)($miro->PO_NUMBER ?? ''));
+                    $poItem = trim((string)($miro->PO_ITEM ?? ''));
+                    if ($poNo === '' || $poItem === '') {
+                        continue;
+                    }
+                    $normLine = ltrim($poItem, '0');
+                    if ($normLine === '') {
+                        $normLine = '0';
+                    }
+                    $payload = [
+                        'QC_LOT'   => $miro->QC_LOT ?? null,
+                        'TO_NO'    => $miro->TO_NO ?? null,
+                        'TO_LINE'  => $miro->TO_LINE ?? null,
+                        'WH_CODE'  => $miro->WH_CODE ?? null,
+                        'VALUATION_TYPE' => $miro->VALUATION_TYPE ?? null,
+                    ];
+                    // Keep both keys to handle line format mismatch (e.g. 0001 vs 1).
+                    $miroLookup[$poNo . '|' . $poItem] = $payload;
+                    $miroLookup[$poNo . '|' . $normLine] = $payload;
+                }
+                //echo "<pre>";print_r($table_data);exit("Row");
+
+
+                foreach ($table_data as &$row) {
+                    $rowPoNo = trim((string)($row['poNumber'] ?? ''));
+                    $rowLine = trim((string)($row['lineItem'] ?? ''));
+                    
+                    $normRowLine = ltrim($rowLine, '0');
+                    if ($normRowLine === '') {
+                        $normRowLine = '0';
+                    }
+                    $keyRaw = $rowPoNo . '|' . $rowLine;
+                    $keyNorm = $rowPoNo . '|' . $normRowLine;
+                    $key = isset($miroLookup[$keyRaw]) ? $keyRaw : $keyNorm;
+                    if (!isset($miroLookup[$key])) {
+                        continue;
+                    }
+
+                    $qcLot   = $miroLookup[$key]['QC_LOT'];
+                    $toNo    = $miroLookup[$key]['TO_NO'];
+                    $toLine  = $miroLookup[$key]['TO_LINE'];
+                    $whCode  = $miroLookup[$key]['WH_CODE'];
+                    $valuationType  = $miroLookup[$key]['VALUATION_TYPE'];
+                    $row['qcLot'] = $qcLot;
+                    $row['toNo'] = $toNo;
+                    $row['toLine'] = $toLine;
+                    $row['whCode'] = $whCode;
+                    $row['batchCode'] = $valuationType;
+                }
+                unset($row);
+            }
+
             $resultData = '';
             if($data->isReceipt == 0){
                
@@ -468,47 +554,48 @@ class MigoAutomationModel extends Model
                     $attach = $item->ATTACHMENT == 'attach' ? 1 : 0 ;
                     // print_r($item);exit;
                     $data1 []= [
-                    "lineItem" => $item->BUZEI, // Increment line item counter
-                    "poNumber" => $item->PO_NUMBER,
-                    "poItem" => $item->PO_ITEM,
-                    "refNo" => $item->REF_NO,
-                    "refLine" => $item->REF_LINE,
-                    "migoNumber"=>$item->MIGO_NUMBER,
-                    "migoLine"=>$item->MIGO_LINE,
-                    "year" => $item->YEAR,
-                    "condition" => $item->CONDITION,
-                    "vendor" => $item->VENDOR,
-                    "taxCode" => $item->TAX_CODE,
-                    "amount" => $item->ITEM_AMOUNT, // Ensure this is the correct field
-                    "quantity" => $item->QUANTITY,
-                    "poUnit" => $item->PO_UNIT,
-                    "itemText" => $item->DESCRIPTION,
-                    "gl"=>$item->GL,
-                    "valuationType" => $item->VALUATION_TYPE,
+                    "lineItem" => $item->BUZEI ?? 0, // SAP line number
+                    "poNumber" => $item->PO_NUMBER ?? '',
+                    "poItem" => $item->PO_ITEM ?? '',
+                    "refNo" => $item->REF_NO ?? '',
+                    "refLine" => $item->REF_LINE ?? '',
+                    "migoNumber"=>$item->MIGO_NUMBER ?? '',
+                    "migoLine"=>$item->MIGO_LINE ?? '',
+                    "year" => $item->YEAR ?? '',
+                    "condition" => $item->CONDITION ?? '',
+                    "vendor" => $item->VENDOR ?? '',
+                    "taxCode" => $item->TAX_CODE ?? '',
+                    "amount" => $item->ITEM_AMOUNT ?? 0, // per-line amount
+                    "quantity" => $item->QUANTITY ?? 0,
+                    "poUnit" => $item->PO_UNIT ?? '',
+                    "itemText" => $item->DESCRIPTION ?? '',
+                    "gl"=>$item->GL ?? '',
+                    "valuationType" => $item->VALUATION_TYPE ?? '',
                     "docDate" => $attach == 1 ? $invoiceDate : null,
                     "postingDate" => $CurrentDate,
                     "refDocNo" => $attach == 1 ? $invoiceNo : null, // SAP
-                    "compCode" => $item->COMP_CODE,
-                    "currency" => $item->CURRENCY, // SAP
+                    "compCode" => $item->COMP_CODE ?? '',
+                    "currency" => $item->CURRENCY ?? '', // SAP
                     "head_text" => '',
-                    "gross_amount" => $data->ITEM_AMOUNT, // SAP
+                    // Use per-line item amount; $data may not contain ITEM_AMOUNT.
+                    "gross_amount" => $item->ITEM_AMOUNT ?? 0, // SAP
                     "gateInOutInfoId" => $gateInOutInfoId,
                     "invoiceCopy" =>  $attach == 1 ? $invoiceCopy : null,
                     "extraCopy" => $extraCopy,
-                    "plantCode" => $item->PLANT,
-                    "paymentMethod" => $item->PAYMENT_METHOD,
-                    "profitCenter" => $item->PROFIT_CENTER,
-                    "costCenter"=>$item->COSTCENTER,
-                    "fiDocument"=>$item->FI_DOC,
+                    "plantCode" => $item->PLANT ?? '',
+                    "paymentMethod" => $item->PAYMENT_METHOD ?? '',
+                    "profitCenter" => $item->PROFIT_CENTER ?? '',
+                    "costCenter"=>$item->COSTCENTER ?? '',
+                    "fiDocument"=>$item->FI_DOC ?? '',
                     "status"=>1,
                     "createdBy"=>$userId,
-                    "vendorName"=>$item->VENDOR_NAME1,
+                    "vendorName"=>$item->VENDOR_NAME1 ?? '',
                     "attach"=>$attach,
-                    "totalTax"=>$item->TOTAL_TAX,
-                    "conditionDetails"=>$item->CONDITION_INT,
-                    'orderQty'=>$item->ORDER_QTY,
-                    'orderUnit'=>$item->ORDER_UNIT,
-                    'serviceLine'=>$item->SER_LINE,
+                    "totalTax"=>$item->TOTAL_TAX ?? 0,
+                    "conditionDetails"=>$item->CONDITION_INT ?? '',
+                    'orderQty'=>$item->ORDER_QTY ?? 0,
+                    'orderUnit'=>$item->ORDER_UNIT ?? '',
+                    'serviceLine'=>$item->SER_LINE ?? '',
                     "bargainNote"=>$bargainNote,
                     "deliveryChallanCopy"=>$deliveryChallanCopy,
                     "ewayBillCopy"=>$ewayBillCopy,
@@ -537,6 +624,11 @@ class MigoAutomationModel extends Model
             if ($data->isReceipt == 0 && $resultData == 0 && $existingEntries1 == 0) {
                 return [0, "The Entry is Not saved please resubmit the Entries"];
             }
+            // Guard: avoid empty IN() SQL when no rows were built for insert.
+            if (empty($table_data)) {
+                return array(0, "No material lines found to submit");
+            }
+
             // Check for duplicate entries
             if(($resultData > 0  || $data->isReceipt == 1 || $existingEntries1 > 0)){
                 $existingEntries = $this->db->table("receipt_material_info")
@@ -551,6 +643,16 @@ class MigoAutomationModel extends Model
             if ($existingEntries > 0) {
                 return array(0, "Duplicate entry detected: MIGO Number " . $document_no . " already exists.");
             }
+
+            // Keep insert payload aligned with actual table schema to avoid
+            // "Unknown column" runtime errors when optional keys are present.
+            $allowedColumns = $this->db->getFieldNames('receipt_material_info');
+            $allowedMap = array_flip($allowedColumns);
+            foreach ($table_data as &$row) {
+                $row = array_intersect_key($row, $allowedMap);
+            }
+            unset($row);
+
             $purchaseIds = explode(',', $data->purchaseId);
             
             $builder = $this->db->table("receipt_material_info");
@@ -564,7 +666,12 @@ class MigoAutomationModel extends Model
             
                 // ✅ Update purchase_order table
                 $this->db->table('purchase_order')
-                    ->set(['migoNumber' => $document_no, 'migoDate' => $CurrentDateTime,'status'=>$data->isReceipt == 0 ? 2 : 1,'msme'=>$data->msme])
+                    ->set([
+                        'migoNumber' => $document_no,
+                        'migoDate' => $CurrentDateTime,
+                        'status' => (($data->isReceipt ?? 0) == 0) ? 2 : 1,
+                        'msme' => $data->msme ?? null
+                    ])
                     ->whereIn('id', $purchaseIds)
                     ->update();
                 if($data->isReceipt == 0){
@@ -587,10 +694,11 @@ class MigoAutomationModel extends Model
                     // print_r($data->gateInOutInfoId);exit;
                     // ✅ If no existing entries, update `gate_in_out_info`
                     // print_r($data->gateInOutInfoIds);exit;
-                    if($data->gateInOutInfoIds){
+                    $gateInOutInfoIds = $data->gateInOutInfoIds ?? null;
+                    if($gateInOutInfoIds){
                         $this->db->table('gate_in_out_info')
                         ->set(['waitingAt' => 8])
-                        ->whereIn('id', $data->gateInOutInfoIds)
+                        ->whereIn('id', $gateInOutInfoIds)
                         ->update();
                     }else{
                     if ($existingEntries1 == 0) {
@@ -925,6 +1033,25 @@ class MigoAutomationModel extends Model
             "creditNoteCopy"=>$creditNoteCopy,
             // "miroId"=>$res
         ];
+        if($item->QC_LOT && $item->TO_NO && $item->TO_LINE && $item->WH_CODE && $item->VALUATION_TYPE){
+                   
+                    $this->db->table("receipt_material_info")
+                    ->set([
+                        'qcLot' => $item->QC_LOT ,
+                        'toNo' => $item->TO_NO,
+                        'toLine' => $item->TO_LINE,
+                        'whCode' => $item->WH_CODE,
+                        'batchCode' => $item->VALUATION_TYPE
+                    ])
+                    ->whereIn('purchaseIds', $purchaseIds)
+                    ->where('poNumber', $item->PO_NUMBER)
+                    ->where('lineItem', $item->PO_ITEM)
+                    ->where('invoiceNo', $invoiceNo)
+                    ->where('gateInOutInfoId', $gateInOutInfoId)
+                    // ->where('migoNumber', $item->migoNumber)
+                    // ->where('status', 1)
+                    ->update();
+        }
         }
     // print_r($data1);exit;
     $existingEntries1 = $this->db->table("miro_entry")
@@ -2016,7 +2143,6 @@ public function getMiroDetailsList($userInfoId, $fromDate, $toDate, $status, $pl
                ->where('me.migoNumber', 0)
             ->groupEnd()
         ->groupEnd();
-     
     }
 
     // ✅ PLANT FILTER
@@ -2085,6 +2211,7 @@ public function MiroUpdateSAP($data) {
     $ids = $data->miroIds;  // Getting the 'ids' of the lines
     $idsArray = explode(',', $ids);
     $CurrentDateTime = date("Y-m-d H:i:s");
+
     if($data->status == 3){
         $sapData = [];
         $lineItemCounter = 1;
@@ -2107,7 +2234,7 @@ public function MiroUpdateSAP($data) {
                 "valuation_type" => $item->valuationType,
                 'order_qty'=>$item->orderQty,
                 'order_unit'=>$item->orderUnit,
-                'service_line'=>$item->serviceLine,
+                'service_line'=>$item->serviceLine
             ];
             
             }
@@ -2138,59 +2265,51 @@ public function MiroUpdateSAP($data) {
                 "invoice_at"=>$data->poData[0]->attach == 0 ? $fileContents : '',
                 "filename_ext"=>$data->poData[0]->attach == 0 ? $fileType_invoiceCopy : '',
                 // "filename_ext"=>$data->poData[0]->attach == 0 ? $fileType_invoiceCopy : '',
-                'entry'=>$data->type,
+                'entry'=>2,
                 "sap_Line" => $sapData
             ];
-            
+            // print_r($sap_data_array2);exit;
             $urlPath1 = "zzgp_api/zzgp_plant/plant?sap-client=900";
             $res = SapUrlHelper::PushToSap($urlPath1, json_encode([$sap_data_array2]));
-           
             $message = $res[0]->MESSAGE ?? 'No message from SAP';
             $DOCUMENT_NO = $res[0]->MIRO_NO ?? '';
             $status = $res[0]->STATUS ?? 0;
-            if($data->type == 1 && $res[0]->GL){
-                return [
-                    'success' => true,
-                    'message' => "Simulate Successful. GL Account: " . $res[0]->GL,
-                    'results' => $res
-                ];
-            }
             if ($status == 0) {
                 return  ["success" => false, "message" => "$message , Please Contact SAP Team", "results" => ''];
             }else if ($status > 0) {
                 $deductionValueTotal = 0;
                 $extraDeductionCostTotal = 0;
 
-                foreach ($data->poData as $item) {
-                    $deductionValueTotal += $item->deductionValue ?? 0;
-                    $extraDeductionCostTotal += $item->extraDeductionCost ?? 0;
-                }
-                $actualStatus = '';
-                if ($deductionValueTotal > 0 || $extraDeductionCostTotal > 0) {
-                    $actualStatus = 4;
-                } else {
-                    $actualStatus = 3;
-                }
-                if ($idsArray) {
-                    $this->db->table("miro_entry")
-                    ->set(['status'=>$actualStatus,'miroNo'=>$DOCUMENT_NO,'head_text'=>$data->remarks,'postingDate'=>$data->postingDate,'updatedBy'=>$data->USERID,'tdsRate'=>$data->taxRate,'tdsType'=>$data->taxType,'tdsCode'=>$data->taxCode,'type'=> $data->type == 2 ? 'Miro Parked' : 'Miro Posted'])
-                    ->whereIn('id', $idsArray)
-                    ->where('status',2)
-                    ->update();
+            foreach ($data->poData as $item) {
+                $deductionValueTotal += $item->deductionValue ?? 0;
+                $extraDeductionCostTotal += $item->extraDeductionCost ?? 0;
+            }
+            $actualStatus = '';
+            if ($deductionValueTotal > 0 || $extraDeductionCostTotal > 0) {
+                $actualStatus = 4;
+            } else {
+                $actualStatus = 3;
+            }
+            if ($idsArray) {
+                $this->db->table("miro_entry")
+                ->set(['status'=>$actualStatus,'miroNo'=>$DOCUMENT_NO,'head_text'=>$data->remarks,'postingDate'=>$data->postingDate,'updatedBy'=>$data->USERID,'tdsRate'=>$data->taxRate,'tdsType'=>$data->taxType,'tdsCode'=>$data->taxCode])
+                ->whereIn('id', $idsArray)
+                ->where('status',2)
+                ->update();
 
-                    return [
-                        'success' => true,
-                        'message' => $data->type == 2 ? "The MIRO Parked Successfully . $DOCUMENT_NO" : "The MIRO Posted Successfully . $DOCUMENT_NO",
-                        'results' => $actualStatus
-                    ];
-                } else {
-                    return [
-                        'success' => false,
-                        'message' => "Some entries failed to update.",
-                        'results' => ''
-                    ];
-                }
-         }
+                return [
+                    'success' => true,
+                    'message' => "The MIRO No Parked Successfully . $DOCUMENT_NO",
+                    'results' => $actualStatus
+                ];
+            } else {
+                return [
+                    'success' => false,
+                    'message' => "Some entries failed to update.",
+                    'results' => ''
+                ];
+            }
+        }
     }else if($data->status == 4){
         $sapData = [];
         $lineItemCounter = 1;
@@ -2238,7 +2357,6 @@ public function MiroUpdateSAP($data) {
                 "invoice_at"=>$data->poData[0]->attach == 0 ? $fileContents : '',
                 "mir7_no"=>$data->poData[0]->miroNo,
                 "METHOD" =>'PUT',
-                'entry'=>$data->type,
                 "sap_Line" => $sapData
             ];
             $urlPath1 = "zzgp_api/zzgp_plant/plant?sap-client=900";
@@ -2246,27 +2364,20 @@ public function MiroUpdateSAP($data) {
             $message = $res[0]->MESSAGE ?? 'No message from SAP';
             $DOCUMENT_NO = $res[0]->MIRO_NO ?? '';
             $status = $res[0]->STATUS ?? 0;
-            if($data->type == 1 && $res[0]->GL){
-                return [
-                    'success' => true,
-                    'message' => "Simulate Successful. GL Account: " . $res[0]->GL,
-                    'results' => $res
-                ];
-            }
             if ($status == 0) {
                 return  ["success" => false, "message" => "$message , Please Contact SAP Team", "results" => ''];
             }else if ($status > 0) {
                 
                 if ($idsArray) {
                     $this->db->table("miro_entry")
-                    ->set(['status'=>3,'deductionDocumentNo'=>$DOCUMENT_NO,'head_text'=>$data->remarks,'deductionPostingDate'=>$data->postingDate,'updatedBy'=>$data->USERID,'deductionTdsRate'=>$data->taxRate,'deductionTdsType'=>$data->taxType,'deductionTdsCode'=>$data->taxCode,'debitNoteType'=> $data->type == 2 ? 'Debit Note Parked' : 'Debit Note Posted'])
+                    ->set(['status'=>3,'deductionDocumentNo'=>$DOCUMENT_NO,'head_text'=>$data->remarks,'deductionPostingDate'=>$data->postingDate,'updatedBy'=>$data->USERID,'deductionTdsRate'=>$data->taxRate,'deductionTdsType'=>$data->taxType,'deductionTdsCode'=>$data->taxCode])
                     ->whereIn('id', $idsArray)
                     ->where('status',4)
                     ->update();
     
                     return [
                         'success' => true,
-                        'message' => $data->type == 2 ? "The Debit Note Parked Successfully . $DOCUMENT_NO" : "The Debit Note Posted Successfully . $DOCUMENT_NO",
+                        'message' => "The Debit Note Parked Successfully . $DOCUMENT_NO",
                         'results' => 3
                     ];
                 } else {
@@ -2666,7 +2777,6 @@ public function addGateInPODetails($postData) {
                 }
             }
         }
-        
         $sap_data = [
             "ZZVA_NO"           => $getVaNumber,
             "ZZTRUCK_NO"        => $postData->subModuleTypeId == 5 ? $getHandCarryNumber : $postData->vehicleNo,
@@ -3206,7 +3316,7 @@ public function getPoNumbersWheatCondition($userInfoId,$fromDate,$toDate,$plantC
     // Execute and return the result
     $result = $builder->get()->getResultArray();
     return $result;
-}
+} 
 public function getVendorListWheat($poNumbers) {
     // Default condition, applying status condition universally
     $cnd = "miro_entry.status = 1"; // Status condition is always applied
@@ -3369,8 +3479,6 @@ public function getMiroDetailsByIdWheat($poNumbers) {
     // ------------------------
     return $builder->get()->getResultArray();
 }
-
-
 public function MiroDetailReportWheat($fromDate, $toDate, $moduleTypeId, $userInfoId, $status, $plantCode, $Userplant){
     // 🔹 Convert milliseconds to seconds if necessary
     $fromDate = $fromDate > 1000000000000 ? intval($fromDate / 1000) : intval($fromDate);
@@ -3769,6 +3877,18 @@ public function getMiroDetailsByIdConditionsWheatRakeFCI($poNumbers) {
     // 7. Execute
     // ------------------------
     return $builder->get()->getResultArray();
-}   
+}  
+public function getLotDetails($plant,$Location){
+    $urlPath ="zzgp_api/zzwh_ss/wh_lot?sap-client=900&plant=$plant&stro_loc=$Location";
+    $data = SapUrlHelper::getWhDatas($urlPath);
+    $result = json_decode($data, true);
+    $formattedLocations = array_map(function ($item) {
+        return [
+            'value' => $item['BIN'],
+            'label' => $item['BIN']
+        ];
+    }, $result); // $result is your original array
+    return $formattedLocations;
+} 
 }
 

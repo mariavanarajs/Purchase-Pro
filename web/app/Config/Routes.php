@@ -37,6 +37,7 @@ $routes->group('api', ['namespace' => 'App\Controllers\Api'], function($routes)
 {	
 	$routes->group('marketdata', ['namespace' => 'App\Controllers\Api\MarketData'], function($routes)
 	{	
+		$routes->get('master/getQCLotList', 'Master::getQCLotList', ['filter' => 'auth']);
 		$routes->post('master/(:any)', 'Master::$1',['filter' => 'auth']);
 		$routes->post('capture/(:any)', 'MarketDataCapture::$1',['filter' => 'auth']);
 	});

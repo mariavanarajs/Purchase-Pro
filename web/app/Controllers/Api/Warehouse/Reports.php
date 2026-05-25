@@ -47,23 +47,31 @@ class Reports extends BaseApiController
   }
 
   public function getWhReport()
-    {
-      $postData = $this->request->getJSON();
-      $warehousId = $postData->Data->warehouseid->value;
-      if($warehousId)
-      {
-        $WHCODE = $warehousId;
-      }else{
-        $WHCODE = 'W01';
-      }
-     
-      $plantId = $postData->Data->plantId->label;
-      $locationId = $postData->Data->storagelocationid->label;
-      $lotId = $postData->Data->lotid->label;
-      $urlPath ="zwh_stocks/stock?sap-client=900&Warehouse_code=$WHCODE&Plant=$plantId&Stoage_Location=$locationId&Lot=$lotId";
-      $sapResult = SapUrlHelper::getWhDatas($urlPath);
-      return $sapResult;
+  {
+    $postData = $this->request->getJSON();
+    if (!$postData || !isset($postData->Data)) {
+      return $this->sendErrorResult('Data required');
     }
+    $data = $postData->Data;
+    $warehouseid = is_object($data->warehouseid ?? null) ? ($data->warehouseid->value ?? null) : ($data->warehouseid ?? null);
+    $WHCODE = !empty($warehouseid) ? $warehouseid : 'W01';
+    $plantId = is_object($data->plantId ?? null) ? ($data->plantId->label ?? '') : ($data->plantId ?? '');
+    $locationId = is_object($data->storagelocationid ?? null) ? ($data->storagelocationid->label ?? '') : ($data->storagelocationid ?? '');
+    $lotId = is_object($data->lotid ?? null) ? ($data->lotid->label ?? '') : ($data->lotid ?? '');
+    $urlPath = "zwh_stocks/stock?sap-client=900&Warehouse_code=" . urlencode($WHCODE) . "&Plant=" . urlencode($plantId) . "&Stoage_Location=" . urlencode($locationId) . "&Lot=" . urlencode($lotId);
+    try {
+      $sapHelper = new SapUrlHelper();
+      $sapResult = $sapHelper->getWhDatas($urlPath);
+      $decoded = is_string($sapResult) ? json_decode($sapResult, true) : $sapResult;
+      if (json_last_error() === JSON_ERROR_NONE && $decoded !== null) {
+        return $this->respond($decoded);
+      }
+      return $this->respond($sapResult);
+    } catch (\Throwable $e) {
+      log_message('error', 'getWhReport: ' . $e->getMessage());
+      return $this->sendErrorResult('Report failed: ' . $e->getMessage());
+    }
+  }
   public function getPictorialView(){
     $postData = $this->request->getJSON();
     $model = new ReportsModel();

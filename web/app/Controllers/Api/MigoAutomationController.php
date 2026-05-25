@@ -94,6 +94,7 @@ class MigoAutomationController extends BaseApiController
 	public function sendFileToInvoiceParser(){
 		$file = $this->request->getFile('file');
 		$PLANT_IDS = $this->request->getPost('PLANT_IDS');
+
 		if (!$file->isValid()) {
 			return $this->response->setJSON(['error' => 'Invalid file']);
 		}
@@ -120,8 +121,6 @@ class MigoAutomationController extends BaseApiController
 		$response = curl_exec($curl);
 		$err = curl_error($curl);
 		curl_close($curl);
-
-
 		if ($err) {
 			return $this->response->setJSON(['error' => $err]);
 		}
@@ -291,16 +290,6 @@ class MigoAutomationController extends BaseApiController
 	}
 
 	public function getPurchaseInfoByUsersId($purchaseId, $userInfoId) {
-		 //print_r($purchaseId);exit;
-	    // ✅ Validate purchaseId
-	    if ($purchaseId === "null") {
-		return $this->respond([
-		    "success" => false,
-		    "message" => "No Purchase ID provided",
-		    "results" => []
-		]);
-	    }
-
 		$gateService = new MigoAutomationModel();    
 		$result = $gateService->getPurchaseInfoByUsersId($purchaseId, $userInfoId);
 		$dataStatus = count($result) > 0 ? true : false;
@@ -528,7 +517,6 @@ class MigoAutomationController extends BaseApiController
 		$gateService = new MigoAutomationModel();   
 		$json = $this->request->getJSON(); 
 		$result = $gateService->MiroUpdateSAP($json);
-		// print_r($result);exit;
 		return $this->respond([
 			"success" => $result['success'], 
 			"message" => $result['message'],
@@ -1289,5 +1277,11 @@ class MigoAutomationController extends BaseApiController
 			"message" => $message,
 			"results" => $dataStatus ? $result : [],
 		]);
+	}
+	public function getLotDetails($plant,$locationId) {
+		$gateService = new MigoAutomationModel();
+		// print_r($locationId);exit;
+		$result = $gateService->getLotDetails($plant,$locationId);
+		return $this->sendSuccessResult($result);
 	}
 }
