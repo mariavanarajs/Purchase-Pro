@@ -764,13 +764,14 @@ class MigoAutomationModel extends Model
             ->join('master_plant', 'master_plant.ID = gate_in_out_info.masterPlantId', 'inner')
             ->join('master_module', 'master_module.id = gate_in_out_info.moduleType', 'inner') // Fixed duplicate join
             ->join('receipt_material_info', 'receipt_material_info.gateInOutInfoId = gate_in_out_info.id', 'inner')
-            ->where('purchase_order.status', $status);
+            ->whereIn('purchase_order.status', [1,2,5]);
+            // ->where("receipt_material_info.createdAt > '2026-05-01 00:00:00'"); // Ensure we only consider records with a valid createdAt;
             // ->where($cnd);
             if($status > 1){
                 $builder->where($cnd);
             }
 	    if($status == 1){
-                $builder->where('receipt_material_info.status',1);
+                $builder->whereIn('receipt_material_info.status',[1,2]);
             }        
            if ($userId != 1) {        
             $builder->where("
@@ -778,7 +779,16 @@ class MigoAutomationModel extends Model
                 AND gate_in_out_info.moduleType IN (SELECT moduleTypeId FROM user_module_access WHERE userInfoId = $userId)
             ");
         }
-    
+        // Exclude records already available in MIRO Entry
+        $builder->where("
+            NOT EXISTS (
+                SELECT 1
+                FROM miro_entry me
+                WHERE me.gateInOutInfoId = receipt_material_info.gateInOutInfoId
+                AND me.refNo = receipt_material_info.migoNumber
+                AND me.status > 0
+            )
+        ");
         $builder->groupBy('purchase_order.invoiceNo'); // Grouping by Invoice Number
     
         return $builder->get()->getResultArray();
@@ -787,7 +797,7 @@ class MigoAutomationModel extends Model
     public function getMaterialDetailList($purchaseId,$status){
         $builder = $this->db->table("receipt_material_info")
         ->select("receipt_material_info.*")
-        ->where('receipt_material_info.status', $status);
+        ->whereIn('receipt_material_info.status', [1,2]);
         if (!is_array($purchaseId)) {
             $purchaseId = explode(',', $purchaseId);
         }
