@@ -224,4 +224,38 @@ class Master extends BaseApiController
     }
     return (string) ($v ?? '');
   }
+  public function getPlantsSAP(){
+    $postData = $this->request->getJSON();
+    $master = new MasterModel();
+    return  $this->sendSuccessResult($master->getPlantsSAP($postData->WH_CODE));    
+
+  }
+  public function getStorageLocationsSAP(){
+    $postData = $this->request->getJSON();
+    $master = new MasterModel();
+    return  $this->sendSuccessResult($master->getStorageLocationsSAP($postData->plantId,$postData->warehouseid));    
+
+  }
+  public function getLotsSAP(){
+    $postData = $this->request->getJSON();
+    $master = new MasterModel();
+    return  $this->sendSuccessResult($master->getLotsSAP($postData->storagelocationid,$postData->plantId,$postData->warehouseid));    
+
+  }
+  public function getMaterialListSAP()
+  {
+    $postData = $this->request->getJSON();
+    if (!$postData) {
+      return $this->response->setStatusCode(400)->setJSON(['success' => 0, 'message' => 'Invalid or missing JSON body']);
+    }
+
+    $whCode = $this->scalarFromPost($postData->wh_code ?? $postData->warehouseid ?? '');
+    $plant = $this->scalarFromPost($postData->plant ?? $postData->plantId ?? '');
+    $stroLoc = $this->scalarFromPost($postData->storagelocationid ?? $postData->storagelocationid ?? '');
+    $bin = $this->scalarFromPost($postData->lotId ?? '');
+
+    $master = new MasterModel();
+    $results = $master->getMaterialListSAP($whCode, $plant, $stroLoc, $bin);
+    return $this->response->setJSON(['success' => 1, 'results' => $results]);
+  }
 }

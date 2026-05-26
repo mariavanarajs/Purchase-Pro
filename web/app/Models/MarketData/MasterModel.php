@@ -445,4 +445,99 @@ class MasterModel extends Model
     }
     return [];
   }
+  public function getPlantsSAP($WH_CODE)
+  {
+    $urlPath = "zzgp_api/zzwh_ss/wh_stock?sap-client=900&wh_code=" . urlencode((string) $WH_CODE);
+    $sapResult = SapUrlHelper::getWhDatas($urlPath);
+
+    // Normalize various SAP/OData result shapes to a plain array of rows
+    $rows = $this->extractSapResultsArray($sapResult);
+
+    // Collect unique plant values preserving insertion order
+    $plants = [];
+    foreach ($rows as $item) {
+      if (!is_array($item)) continue;
+      $plant = '';
+      if (isset($item['PLANT']) && $item['PLANT'] !== null) $plant = trim((string) $item['PLANT']);
+      elseif (isset($item['plant']) && $item['plant'] !== null) $plant = trim((string) $item['plant']);
+      if ($plant === '') continue;
+      if (!isset($plants[$plant])) {
+        $plants[$plant] = ['value' => $plant, 'label' => $plant];
+      }
+    }
+
+    return array_values($plants);
+  }
+  public function getStorageLocationsSAP($plantId,$whCode)
+  {
+    $urlPath = "zzgp_api/zzwh_ss/wh_stock?sap-client=900&wh_code=" . urlencode((string) $whCode) . "&plant=" . urlencode((string) $plantId);
+    $sapResult = SapUrlHelper::getWhDatas($urlPath);
+    // Normalize various SAP/OData result shapes to a plain array of rows
+    $rows = $this->extractSapResultsArray($sapResult);
+
+    // Collect unique storage location values preserving insertion order
+    $storageLocations = [];
+    foreach ($rows as $item) {
+      if (!is_array($item)) continue;
+      $stroLoc = '';
+      if (isset($item['STRO_LOC']) && $item['STRO_LOC'] !== null) $stroLoc = trim((string) $item['STRO_LOC']);
+      elseif (isset($item['sto_loc']) && $item['sto_loc'] !== null) $stroLoc = trim((string) $item['sto_loc']);
+      if ($stroLoc === '') continue;
+      if (!isset($storageLocations[$stroLoc])) {
+        $storageLocations[$stroLoc] = ['value' => $stroLoc, 'label' => $stroLoc];
+      }
+    }
+    // print_r($storageLocations);exit;
+    return array_values($storageLocations);
+  }
+  public function getLotsSAP($stroLoc,$plantId,$whCode)
+  {
+    $urlPath = "zzgp_api/zzwh_ss/wh_stock?sap-client=900&wh_code=" . urlencode((string) $whCode) . "&plant=" . urlencode((string) $plantId) . "&stro_loc=" . urlencode((string) $stroLoc);
+    $sapResult = SapUrlHelper::getWhDatas($urlPath);
+
+    // Normalize various SAP/OData result shapes to a plain array of rows
+    $rows = $this->extractSapResultsArray($sapResult);
+    // print_r($rows);exit;
+    // Collect unique plant values preserving insertion order
+    $plants = [];
+    foreach ($rows as $item) {
+      if (!is_array($item)) continue;
+      $plant = '';
+      if (isset($item['BIN']) && $item['BIN'] !== null && $item['QUANTITY'] != '0') $plant = trim((string) $item['BIN']);
+      elseif (isset($item['plant']) && $item['plant'] !== null) $plant = trim((string) $item['plant']);
+      if ($plant === '') continue;
+      if (!isset($plants[$plant])) {
+        $plants[$plant] = ['value' => $plant, 'label' => $plant];
+      }
+    }
+
+    return array_values($plants);
+  }
+  public function getMaterialListSAP($whCode, $plant, $stroLoc, $bin)
+  {
+    $urlPath = "zzgp_api/zzwh_ss/wh_stock?sap-client=900&wh_code=" . urlencode((string) $whCode)
+      . "&plant=" . urlencode((string) $plant)
+      . "&stro_loc=" . urlencode((string) $stroLoc)
+      . "&bin=" . urlencode((string) $bin);
+    $sapResult = SapUrlHelper::getWhDatas($urlPath);
+    // Normalize various SAP/OData result shapes to a plain array of rows
+    $rows = $this->extractSapResultsArray($sapResult);
+
+    // Collect unique plant values preserving insertion order
+    $plants = [];
+    foreach ($rows as $item) {
+      if (!is_array($item)) continue;
+      $plant = '';
+      $label = '';
+      if (isset($item['MATERIAL_CODE']) && $item['MATERIAL_CODE'] !== null) $plant = trim((string) $item['MATERIAL_CODE']);
+      if (isset($item['MATERIAL_NAME']) && $item['MATERIAL_NAME'] !== null) $label = trim((string) $item['MATERIAL_NAME']);
+      elseif (isset($item['plant']) && $item['plant'] !== null) $plant = trim((string) $item['plant']);
+      if ($plant === '') continue;
+      if (!isset($plants[$plant])) {
+        $plants[$plant] = ['value' => $plant, 'label' => $label !== '' ? $label : $plant];
+      }
+    }
+
+    return array_values($plants);
+  }
 }
