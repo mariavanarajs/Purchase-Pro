@@ -98,8 +98,15 @@ const SsStockReportData = ({ form, onSubmit }) => {
     ClearDropdown("SL");
   };
   const FillLotList = (value) => {
-    const fdata = { LocationId: value, screentype: "Warehousewisestocks" };
-    apiPostMethod(apiBaseUrl + 'warehouse/master/getWHLotBasedSL', fdata)
+    const v = form.values;
+    const wh = v.warehouseid?.value ?? v.warehouseid;
+    const plantVal = v.plantId?.value ?? v.plantId;
+    const plantLabel = v.plantId?.label ?? plantVal;
+    const locVal = value;
+    const locLabel = value;
+    
+     const fdata = { warehouseid: wh, plantId: plantLabel, storagelocationid: locLabel };
+    apiPostMethod(apiBaseUrl + 'marketdata/master/getLotsSAP', fdata)
       .then((response) => {
         const { data } = response;
         if (data.success) setLotoption([{ options: data.results }]);
@@ -127,30 +134,12 @@ const SsStockReportData = ({ form, onSubmit }) => {
       return;
     }
     const fdata = { warehouseid: wh, plantId: plantLabel, storagelocationid: locLabel, lotId: lot };
-    apiPostMethod(apiBaseUrl + "marketdata/master/getMaterialList", fdata)
+    apiPostMethod(apiBaseUrl + "marketdata/master/getMaterialListSAP", fdata)
       .then((response) => {
         const { data } = response;
-        const raw = data?.results ?? data?.d?.results ?? (Array.isArray(data) ? data : []);
-        const results = Array.isArray(raw) ? raw : [];
-        const materials = [];
-        const seen = new Set();
-        results.forEach((row) => {
-          if (!row || typeof row !== 'object') return;
-          const code = row.MATERIAL_CODE ?? row.MaterialCode ?? row.MATNR ?? row.MATERIAL ?? "";
-          const name = row.MATERIAL_NAME ?? row.MaterialName ?? row.MAKTX ?? row.MATERIAL_DESC ?? row.SEGMENT ?? row.MAT_DESC ?? "";
-          let label;
-          if (code && name) label = `${String(code).trim()} - ${String(name).trim()}`;
-          else if (code || name) label = String(code || name).trim();
-          else label = String(row.SEGMENT ?? row.Material ?? row.WHEAT_VARIETY ?? row.WheatVariety ?? "").trim();
-          if (!label) return;
-          const value = (code && String(code).trim()) || label;
-          if (!seen.has(value)) {
-            seen.add(value);
-            materials.push({ value, label });
-          }
-        });
-        setMaterialoption([{ options: materials }]);
-      })
+        if (data.success) setMaterialoption([{ options: data.results }]);
+        // setMaterialoption([{ options: materials }]);
+       })
       .catch(() => {
         setMaterialoption([]);
         errorToast("Failed to load materials");
@@ -159,15 +148,22 @@ const SsStockReportData = ({ form, onSubmit }) => {
 
   const FillPlantList = (warehouseid) => {
     const fdata = { WH_CODE: warehouseid, screentype: "Warehousewisestocks" };
-    apiPostMethod(apiBaseUrl + 'warehouse/master/getWHplantList', fdata)
+    apiPostMethod(apiBaseUrl + 'marketdata/master/getPlantsSAP', fdata)
       .then((response) => {
-        if (response.data?.success) setPlantoption([{ options: response.data.results }]);
+                    
+          setPlantoption([{ options: response.data.results }]);
       })
       .catch(() => errorToast("Something went wrong, please try again after sometime"));
   };
   const FillStorageLocationFromWarehouse = (plantId) => {
-    const fdata = { plantId, screentype: "Warehousewisestocks" };
-    apiPostMethod(apiBaseUrl + 'warehouse/master/getWHstoragelocationBasedPlant', fdata)
+     const v = form.values;
+    const wh = v.warehouseid?.value ?? v.warehouseid;
+    const plantVal = v.plantId?.value ?? v.plantId;
+    const plantLabel = v.plantId?.label ?? plantVal;
+  
+    
+    const fdata = { warehouseid: wh, plantId: plantLabel}
+    apiPostMethod(apiBaseUrl + 'marketdata/master/getStorageLocationsSAP', fdata)
       .then((response) => {
         if (response.data?.success) setLocationoption([{ options: response.data.results }]);
       })
@@ -362,13 +358,13 @@ const SsStockReportData = ({ form, onSubmit }) => {
                 <Button.Ripple onClick={showReport} color="primary" type="button" size="sm">
                   <Search size={14} className="mr-50" />
                   Show
-                </Button.Ripple>
+                </Button.Ripple>&nbsp;
                 <Button.Ripple onClick={clearFilters} color="secondary" type="button" size="sm">
                   <Trash2 size={14} className="mr-50" />
                   Clear
-                </Button.Ripple>
+                </Button.Ripple>&nbsp;
               </ButtonGroup>
-              <ButtonGroup>
+              <ButtonGroup className="ml-auto" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
                 <Button.Ripple onClick={exportToCsv} color="success" type="button" outline size="sm">
                   <Download size={14} className="mr-50" />
                   CSV
@@ -485,7 +481,7 @@ const SsStockReport = () => {
   });
   return (
     <Fragment>
-      <CardComponent header="S & S Stock Report">
+      <CardComponent header="Stock Report">
         <SsStockReportData form={form} onSubmit={() => {}} />
       </CardComponent>
     </Fragment>
